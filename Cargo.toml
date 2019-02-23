@@ -1,0 +1,7 @@
+[package]
+name = "rufi"
+version = "0.1.0"
+authors = ["glaceef <masaki7322_art@yahoo.co.jp>"]
+edition = "2018"
+
+[dependencies]
