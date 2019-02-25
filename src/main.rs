@@ -1,7 +1,31 @@
+use regex::Regex;
+
 use std::env;
 use std::path::{Path, PathBuf};
 
 // 再帰関数ではなく、mpscによるマルチスレッド処理でも良さそう。
+
+enum Target<'a> {
+    Simple(&'a str),
+    SimpleExt(&'a str),
+    WithWild(&'a str, Regex),
+    WithWildExt(&'a str, Regex),
+}
+impl Target {
+    fn from(target: &str) -> Self {
+        let with_extension = {
+            if !pattern.contains('.') {
+                false
+            } else if pattern.starts_with('.') {
+                pattern.matches('.').len()
+            }
+            !pattern.starts_with('.') || pattern.starts_with('.') && ;
+        };
+        let with_wildcard = pattern.contains('*');
+        match (is_file, with_wildcard) {
+        }
+    }
+}
 
 fn main(){
     let mut args = env::args();
@@ -19,8 +43,9 @@ fn main(){
             }
             "-f" | "--file" => {
                 if let Some(file_name) = args.next() {
-                    println!("target: \"{}\"\n", file_name);
-                    let result = search_file(times, Path::new("./"), &file_name);
+                    let target = if file_name.contains('*') { file_name.replace("*", ".*") } else { file_name };
+                    println!("target: \"{}\"\n", target);
+                    let result = search_file(times, Path::new("./"), &target);
                     print_result(&result);
                     match result.len() {
                         n if n == 1 => { println!("{} file was found.", n);   }
@@ -87,16 +112,24 @@ fn print_result(result: &Vec<PathBuf>) {
     }
 }
 
-fn search_file(n: u32, path: &Path, target: &impl AsRef<Path>) -> Vec<PathBuf> {
+fn search_file(n: u32, path: &Path, target: &Target) -> Vec<PathBuf> {
     let mut vec = vec![];
     let mut entries = path.read_dir().expect(&format!("Failed to read list. At {:?}", path));
     while let Some(Ok(entry)) = entries.next() {
         let path = entry.path();
         if path.is_file() {
             if let Some(file_name) = path.file_name() {
-                if file_name == target.as_ref() {
-                    vec.push(path);
-                }
+                target.
+                // match Target {
+                //     Target::Simple(target) => {
+                //         if file_name == target {
+                //             vec.push(path);
+                //         }
+                //     }
+                //     Target::WithWild(target) => {
+                //         target.is_match(target)
+                //     }
+                // }
             }
         } else if n > 0 {
             let mut result = search_file(n - 1, path.as_path(), target);
