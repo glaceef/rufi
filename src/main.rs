@@ -17,12 +17,17 @@ impl Target {
             if !pattern.contains('.') {
                 false
             } else if pattern.starts_with('.') {
-                pattern.matches('.').len()
+                pattern.matches('.').len() >= 2
+            } else {
+                true
             }
-            !pattern.starts_with('.') || pattern.starts_with('.') && ;
         };
         let with_wildcard = pattern.contains('*');
-        match (is_file, with_wildcard) {
+        match (with_extension, with_wildcard) {
+            ( true,  true) => { Target::WithWildExt() }
+            ( true, false) => { Target::SimpleExt() }
+            (false,  true) => { Target::WithWild() }
+            (false, false) => { Target::Simple() }
         }
     }
 }
