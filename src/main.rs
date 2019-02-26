@@ -8,11 +8,11 @@ use std::path::{Path, PathBuf};
 enum Target<'a> {
     Simple(&'a str),
     SimpleExt(&'a str),
-    WithWild(&'a str, Regex),
-    WithWildExt(&'a str, Regex),
+    WithWild(Regex),
+    WithWildExt(Regex),
 }
 impl Target {
-    fn from(target: &str) -> Self {
+    fn from(mut target: &str) -> Self {
         let with_extension = {
             if !pattern.contains('.') {
                 false
@@ -24,10 +24,10 @@ impl Target {
         };
         let with_wildcard = pattern.contains('*');
         match (with_extension, with_wildcard) {
-            ( true,  true) => { Target::WithWildExt() }
-            ( true, false) => { Target::SimpleExt() }
-            (false,  true) => { Target::WithWild() }
-            (false, false) => { Target::Simple() }
+            ( true,  true) => { Target::WithWildExt(Regex::new(&target.replace("*", ".*")).unwrap()) }
+            ( true, false) => { Target::SimpleExt(target) }
+            (false,  true) => { Target::WithWild(Regex::new(&target.replace("*", ".*")).unwrap()) }
+            (false, false) => { Target::Simple(target) }
         }
     }
 }
@@ -124,17 +124,32 @@ fn search_file(n: u32, path: &Path, target: &Target) -> Vec<PathBuf> {
         let path = entry.path();
         if path.is_file() {
             if let Some(file_name) = path.file_name() {
-                target.
-                // match Target {
-                //     Target::Simple(target) => {
-                //         if file_name == target {
-                //             vec.push(path);
-                //         }
-                //     }
-                //     Target::WithWild(target) => {
-                //         target.is_match(target)
-                //     }
-                // }
+                match target {
+                    Target::Simple(target) => {
+                        if let Some(file_stem) = Path::new(file_name).file_stem() {
+                            if file_stem == target {
+                                vec.push(path);
+                            }
+                        }
+                    }
+                    Target::SimpleExt(target) => {
+                        if file_name == target {
+                            vec.push(path);
+                        }
+                    }
+                    Target::WithWild(re) => {
+                        if let Some(file_stem) = Path::new(file_name).file_stem() {
+                            if re.is_match(file_stem) {
+                                vec.push(path);
+                            }
+                        }
+                    }
+                    Target::WithWildExt(re) => {
+                        if re.is_match(file_name) {
+                            vec.push(path)
+                        }
+                    }
+                }
             }
         } else if n > 0 {
             let mut result = search_file(n - 1, path.as_path(), target);
