@@ -11,23 +11,38 @@ enum Target<'a> {
     WithWild(Regex),
     WithWildExt(Regex),
 }
-impl Target {
-    fn from(mut target: &str) -> Self {
+impl<'a> Target<'a> {
+    fn from_file(target: &'a str) -> Self {
         let with_extension = {
-            if !pattern.contains('.') {
+            if !target.contains('.') {
                 false
-            } else if pattern.starts_with('.') {
-                pattern.matches('.').len() >= 2
+            } else if target.starts_with('.') {
+                target.matches('.').count() >= 2
             } else {
                 true
             }
         };
-        let with_wildcard = pattern.contains('*');
+        let with_wildcard = target.contains('*');
         match (with_extension, with_wildcard) {
-            ( true,  true) => { Target::WithWildExt(Regex::new(&target.replace("*", ".*")).unwrap()) }
+            ( true,  true) => {
+                let target = String::from("^") + &target.replace("*", ".*") + "$";
+                Target::WithWildExt(Regex::new(&target).unwrap())
+            }
             ( true, false) => { Target::SimpleExt(target) }
-            (false,  true) => { Target::WithWild(Regex::new(&target.replace("*", ".*")).unwrap()) }
+            (false,  true) => {
+                let target = String::from("^") + &target.replace("*", ".*") + "$";
+                Target::WithWild(Regex::new(&target).unwrap())
+            }
             (false, false) => { Target::Simple(target) }
+        }
+    }
+    fn from_dir(target: &'a str) -> Self {
+        if target.contains('*') {
+            let target = String::from("^") + &target.replace("*", ".*") + "$";
+            let re = Regex::new(&target).unwrap();
+            Target::WithWild(re)
+        } else {
+            Target::Simple(target)
         }
     }
 }
@@ -48,9 +63,8 @@ fn main(){
             }
             "-f" | "--file" => {
                 if let Some(file_name) = args.next() {
-                    let target = if file_name.contains('*') { file_name.replace("*", ".*") } else { file_name };
-                    println!("target: \"{}\"\n", target);
-                    let result = search_file(times, Path::new("./"), &target);
+                    println!("target: \"{}\"\n", file_name);
+                    let result = search_file(times, Path::new("./"), &Target::from_file(&file_name));
                     print_result(&result);
                     match result.len() {
                         n if n == 1 => { println!("{} file was found.", n);   }
@@ -64,7 +78,7 @@ fn main(){
             "-d" | "--dir" => {
                 if let Some(dir_name) = args.next() {
                     println!("target: \"{}\"\n", dir_name);
-                    let result = search_dir(times, Path::new("./"), &dir_name);
+                    let result = search_dir(times, Path::new("./"), &Target::from_dir(&dir_name));
                     print_result(&result);
                     match result.len() {
                         n if n == 1 => { println!("{} directory was found.", n);    }
@@ -110,7 +124,7 @@ fn print_result(result: &Vec<PathBuf>) {
     } else {
         for path in result {
             if let Some(s) = path.as_path().to_str() {
-                println!("{}", to_os_string(s));
+                println!("{}", s);
             }
         }
         println!("");
@@ -127,26 +141,30 @@ fn search_file(n: u32, path: &Path, target: &Target) -> Vec<PathBuf> {
                 match target {
                     Target::Simple(target) => {
                         if let Some(file_stem) = Path::new(file_name).file_stem() {
-                            if file_stem == target {
+                            if cmp_osstr_refstr(file_stem, target) {
                                 vec.push(path);
                             }
                         }
                     }
                     Target::SimpleExt(target) => {
-                        if file_name == target {
+                        if cmp_osstr_refstr(file_name, target) {
                             vec.push(path);
                         }
                     }
                     Target::WithWild(re) => {
                         if let Some(file_stem) = Path::new(file_name).file_stem() {
-                            if re.is_match(file_stem) {
-                                vec.push(path);
+                            if let Some(name) = file_stem.to_str() {
+                                if re.is_match(name) {
+                                    vec.push(path);
+                                }
                             }
                         }
                     }
                     Target::WithWildExt(re) => {
-                        if re.is_match(file_name) {
-                            vec.push(path)
+                        if let Some(name) = file_name.to_str() {
+                            if re.is_match(name) {
+                                vec.push(path)
+                            }
                         }
                     }
                 }
@@ -159,15 +177,27 @@ fn search_file(n: u32, path: &Path, target: &Target) -> Vec<PathBuf> {
     vec
 }
 
-fn search_dir(n: u32, path: &Path, target: &impl AsRef<Path>) -> Vec<PathBuf> {
+fn search_dir(n: u32, path: &Path, target: &Target) -> Vec<PathBuf> {
     let mut vec = vec![];
     let mut entries = path.read_dir().expect(&format!("Failed to read list. At {:?}", path));
     while let Some(Ok(entry)) = entries.next() {
         let path = entry.path();
         if path.is_dir() {
             if let Some(dir_name) = path.file_name() {
-                if dir_name == target.as_ref() {
-                    vec.push(path.clone());
+                match target {
+                    Target::Simple(target) => {
+                        if cmp_osstr_refstr(dir_name, target) {
+                            vec.push(path.clone());
+                        }
+                    }
+                    Target::WithWild(re) => {
+                        if let Some(name) = dir_name.to_str() {
+                            if re.is_match(name) {
+                                vec.push(path.clone());
+                            }
+                        }
+                    }
+                    _ => {}
                 }
             }
             if n > 0 {
@@ -179,12 +209,9 @@ fn search_dir(n: u32, path: &Path, target: &impl AsRef<Path>) -> Vec<PathBuf> {
     vec
 }
 
-#[cfg(target_os = "windows")]
-fn func() {
-    println!("Windows");
-}
-
-#[cfg(target_os = "macos")]
-fn func() {
-    println!("MacOS");
+use std::ffi::OsStr;
+fn cmp_osstr_refstr(osstr: &OsStr, refstr: &str) -> bool {
+    if let Some(s) = osstr.to_str() {
+        s == refstr
+    } else { false }
 }
